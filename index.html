@@ -1,0 +1,124 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>I²C Visualizer</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f3f5f8;--pn:#fff;--tx:#1b2330;--mu:#5d6878;--bd:#cfd5de;--gr:#e6e9ef;--scl:#0b7a75;--sda:#b4540a;--m:#2563eb;--s:#c2410c;--er:#c0261c;--ok:#15803d}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1319;--pn:#161d26;--tx:#e3e8ef;--mu:#8e9aab;--bd:#2b3644;--gr:#222b37;--scl:#2dd4bf;--sda:#fb923c;--m:#60a5fa;--s:#fb923c;--er:#f87171;--ok:#4ade80}}
+:root[data-theme="dark"]{--bg:#0e1319;--pn:#161d26;--tx:#e3e8ef;--mu:#8e9aab;--bd:#2b3644;--gr:#222b37;--scl:#2dd4bf;--sda:#fb923c;--m:#60a5fa;--s:#fb923c;--er:#f87171;--ok:#4ade80}
+*{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--tx);font:13px system-ui,sans-serif}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--pn);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+h1{font-size:15px;margin:0 auto 0 0}h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mu);margin:0 0 6px}
+main{display:grid;grid-template-columns:260px 1fr;gap:10px;padding:10px}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.p{background:var(--pn);border:1px solid var(--bd);border-radius:6px;padding:10px;margin-bottom:10px}
+label{display:block;margin:6px 0 2px;color:var(--mu);font-size:12px}
+input,select,button{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:4px;padding:4px 6px}
+input[type=text],input:not([type]),input[type=number],select{width:100%}input[type=checkbox]{width:auto}
+button{cursor:pointer}button:hover{border-color:var(--m)}
+.bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}.bar select{width:auto}
+#wrap{overflow-x:auto;border:1px solid var(--bd);border-radius:4px}svg{display:block}
+#err{color:var(--er);margin-top:8px;white-space:pre-line}button:disabled{opacity:.45;cursor:default}#err:empty{display:none}
+table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:3px 8px;border-bottom:1px solid var(--gr);font-family:ui-monospace,Menlo,monospace;font-size:12px}tr[data-idx]{cursor:pointer}tr[data-idx]:hover{background:var(--gr)}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.6}.note{color:var(--mu);font-size:12px}.bad{color:var(--er)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:800px){.cols{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>I²C Visualizer</h1><select id="pre" title="Examples"></select><button id="th">Dark / Light</button></header>
+<main>
+<aside><div class="p" id="cfg"><h2>Transaction</h2>
+<label>Bus speed</label><select id="speed"><option value="100">Standard 100 kbit/s</option><option value="400">Fast 400 kbit/s</option><option value="1000">Fast-mode Plus 1 Mbit/s</option><option value="custom">Custom…</option></select>
+<input id="hz" type="number" placeholder="kbit/s (max 1000)" style="margin-top:4px;display:none">
+<div class="note" id="bp" style="margin-top:4px"></div>
+<label>Address mode</label><select id="amode"><option value="7">7-bit</option><option value="10">10-bit</option></select>
+<label>Slave address (hex)</label><input id="addr">
+<label>Operation</label><select id="op"><option value="w">Write</option><option value="r">Read</option><option value="wr">Write, repeated START, Read</option></select>
+<label>Write data / register byte(s) (hex)</label><input id="wdata">
+<label>Read length (bytes)</label><input id="rlen" type="number">
+<label>Custom read data (hex, optional)</label><input id="rdata">
+<label><input type="checkbox" id="stop"> Issue STOP at end</label>
+<h2 style="margin-top:10px">Simulated slave</h2>
+<label><input type="checkbox" id="aack"> ACK address</label>
+<label>NACK write byte index (blank = none)</label><input id="nidx" type="number">
+<div class="bar" style="margin-top:8px"><button id="save">Save config</button></div></div>
+<div class="p note"><b>Notes.</b> Simulated bus only; no real device is contacted. Timing is nominal (bit period = 1/speed), not a guarantee of electrical spec compliance. Not supported: clock stretching, multi-controller arbitration, HS-mode, general call.</div></aside>
+<section>
+<div class="p"><div class="bar"><button id="zi">Zoom +</button><button id="zo">Zoom −</button><button id="fit">Fit</button><span style="width:10px"></span><button id="rs">⏮ Reset</button><button id="pl">▶ Play</button><button id="nx">Next transition</button><select id="sp"><option>0.25</option><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>×</div>
+<div id="wrap"></div><div id="err"></div><div id="msg" class="note"></div>
+<div class="mono" id="cr" style="margin-top:8px"></div></div>
+<div class="cols"><div class="p"><h2>Transaction table</h2><div id="tb"></div><div id="nt" class="bad" style="margin-top:6px"></div>
+<div class="bar" style="margin-top:8px"><button id="png">PNG</button><button id="csv">CSV</button><button id="cp">Copy summary</button></div></div>
+<div class="p"><h2>Selected field</h2><div class="mono" id="det">Click an annotation or table row.</div></div></div>
+</section></main>
+<script src="engine.js"></script>
+<script>
+const $=id=>document.getElementById(id),L=56;
+const PR={'1 · Write one byte':{op:'w',wdata:'A5'},'2 · Write three bytes':{op:'w'},'3 · Read two bytes':{op:'r',rlen:2,rdata:'12 34'},
+'4 · Write register, repeated START, read':{op:'wr',wdata:'10',rlen:2,rdata:'DE AD'},'5 · Address NACK':{op:'w',wdata:'A5',aack:false},
+'6 · Data-byte NACK':{op:'w',nidx:1},'7 · 10-bit write':{amode:'10',addr:'0x2A5',op:'w',wdata:'A5 3C'},'8 · 10-bit read':{amode:'10',addr:'0x2A5',op:'r',rlen:2,rdata:'12 34'}};
+const setCfg=o=>{for(const k of F){const e=$(k),v=o[k];if(e.type==='checkbox')e.checked=!!v;else e.value=v}};
+const getRaw=()=>Object.fromEntries(F.map(k=>[k,$(k).type==='checkbox'?$(k).checked:$(k).value]));
+const parse=()=>parseRaw(getRaw());
+let TX,sel=null,cur=0,px=3,timer=null,drag=false;const wrap=$('wrap');
+const pal=()=>{const s=getComputedStyle(document.documentElement),v=n=>s.getPropertyValue('--'+n).trim();return Object.fromEntries(['bg','pn','tx','mu','bd','gr','scl','sda','m','s','er','ok'].map(k=>[k,v(k)]))};
+const x=t=>L+t*px;
+function svgMarkup(){const{pts,segs,tEnd}=TX,C=pal(),W=L+tEnd*px+24,H=232;
+ let s=`<svg id="sv" xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" font-family="ui-monospace,Menlo,Consolas,monospace" font-size="11"><rect width="${W}" height="${H}" fill="${C.pn}"/>`;
+ const stp=[.1,.2,.5,1,2,5,10,20,50,100,200,500,1000].find(v=>v*px>=70)||1000;
+ for(let k=0;k*stp<=tEnd+1e-9;k++){const X=x(k*stp);s+=`<line x1="${X}" x2="${X}" y1="20" y2="${H-8}" stroke="${C.gr}"/><text x="${X+3}" y="14" fill="${C.mu}">${+(k*stp).toFixed(2)} µs</text>`}
+ for(const g of segs)s+=`<line x1="${x(g.t0)}" x2="${x(g.t0)}" y1="28" y2="${H-8}" stroke="${C.bd}" stroke-dasharray="3 3"/>`;
+ if(sel){const g=sel;s+=`<rect x="${x(g.t0)}" y="62" width="${(g.t1-g.t0)*px}" height="${H-70}" fill="${C.m}" fill-opacity=".1"/>`}
+ segs.forEach((g,i)=>{const X=x(g.t0),w=(g.t1-g.t0)*px,col=g.k==='ack'?(g.ack?C.ok:C.er):g.k==='addr'?C.m:g.k==='data'?C.scl:C.mu,lab=g.k==='ack'?(g.ack?'ACK':'NACK'):g.disp;
+  s+=`<rect data-i="${i}" x="${X}" y="28" width="${w}" height="30" fill="${col}" fill-opacity="${sel===g?.5:.18}" stroke="${col}"/>`;
+  if(w>lab.length*6.6+6)s+=`<text x="${X+w/2}" y="47" text-anchor="middle" fill="${C.tx}" pointer-events="none">${lab}</text>`});
+ const path=(key,yh,yl)=>{let d='',last=null;for(const p of pts){const y=p[key]?yh:yl;if(last===null)d=`M${x(p.t)} ${y}`;else if(y!==last)d+=`H${x(p.t)}V${y}`;last=y}return d+`H${x(tEnd)}`};
+ s+=`<text x="8" y="102" fill="${C.scl}" font-weight="bold">SCL</text><path d="${path('scl',78,118)}" fill="none" stroke="${C.scl}" stroke-width="2"/>`;
+ s+=`<text x="8" y="172" fill="${C.sda}" font-weight="bold">SDA</text><path d="${path('sda',148,188)}" fill="none" stroke="${C.sda}" stroke-width="2"/>`;
+ s+=`<text x="8" y="211" fill="${C.mu}" font-size="9">pulled by</text>`;
+ pts.forEach((p,i)=>{if(!p.pull.length)return;const e=i+1<pts.length?pts[i+1].t:tEnd,col=p.pull[0]==='M'?C.m:C.s;
+  s+=`<rect x="${x(p.t)}" y="198" width="${Math.max(0,(e-p.t)*px)}" height="16" fill="${col}" fill-opacity=".35"/>`;if((e-p.t)*px>16)s+=`<text x="${x(p.t)+4}" y="210" fill="${C.tx}">${p.pull[0]}</text>`});
+ return s+`<line id="cl" y1="20" y2="${H-8}" stroke="${C.er}" stroke-width="1.5"/></svg>`}
+function curReadout(){const{pts,tEnd}=TX;let p=pts[0];for(const q of pts)if(q.t<=cur+1e-9)p=q;
+ const pu=p.sda?'released, pulled HIGH':'pulled LOW by '+p.pull.map(w=>w==='M'?'master':'slave').join(' + ');
+ $('cr').innerHTML=`Time: ${cur.toFixed(2)} µs &nbsp; SCL = ${p.scl?'HIGH':'LOW'} &nbsp; SDA = ${p.sda?'HIGH':'LOW'} (${pu})<br>Phase: ${p.ph} &nbsp; Byte: ${p.byte<0?'–':p.byte} &nbsp; Bit: ${p.bit}<br>Event: ${p.ev}`;
+ const l=$('cl');if(l){l.setAttribute('x1',x(cur));l.setAttribute('x2',x(cur))}}
+function draw(){wrap.innerHTML=svgMarkup();curReadout();det()}
+function det(){const g=sel,d=$('det');if(!g){d.textContent='Click an annotation or table row.';return}
+ if(g.k==='start'||g.k==='stop'){d.innerHTML=g.k==='stop'?'STOP: SDA rises while SCL is HIGH.<br>Master releases SDA; pull-up makes it HIGH.':`${g.rep?'Repeated START':'START'}: SDA falls while SCL is HIGH.<br>Master pulls SDA LOW.${g.rep?'<br>No STOP precedes it, so the master keeps the bus.':''}`;return}
+ const b=g.k==='ack'?TX.segs.find(s=>s.idx===g.idx&&s.k!=='ack'):g;
+ d.innerHTML=`${b.label}: <b>${hex(b.v,2)}</b><br>Binary: ${b.v.toString(2).padStart(8,'0')} (MSB first)<br>Type: ${b.k==='addr'?'Address byte':'Data byte'}${b.rw?`<br>R/W bit: ${b.rw==='R'?'1 (Read)':'0 (Write)'}`:''}<br>${b.info}<br>Result: <b class="${b.ack?'':'bad'}">${b.ack?'ACK':'NACK'}</b> from ${b.rx==='S'?'slave':'master'}<br>Transmitter: ${b.tx==='M'?'master':'slave'} · Receiver: ${b.rx==='S'?'slave':'master'}`}
+function table(){$('tb').innerHTML=`<table><tr><th>Phase</th><th>Value</th><th>Direction</th><th>Response</th></tr>${TX.rows.map(r=>`<tr data-idx="${r.idx}"><td>${r.phase}</td><td>${r.value}</td><td>${r.dir}</td><td class="${r.resp[0]==='N'?'bad':''}">${r.resp}</td></tr>`).join('')}</table>`;
+ $('nt').innerHTML=TX.notes.join('<br>')}
+const setExports=on=>['png','csv','cp','pl','nx','rs','zi','zo','fit'].forEach(k=>$(k).disabled=!on);
+function invalidate(){stopPlay();TX=null;sel=null;cur=0;wrap.innerHTML='<div class="note" style="padding:14px">Waveform hidden: fix the configuration errors above.</div>';
+ for(const k of['tb','nt','cr'])$(k).innerHTML='';$('det').textContent='No valid transaction.';setExports(false)}
+function recalc(){const{err,c,tx}=nextState(getRaw());$('bp').textContent=c.khz>0?`SCL ${c.khz} kHz · nominal bit period ${+(1000/c.khz).toFixed(3)} µs`:'';
+ $('hz').style.display=$('speed').value==='custom'?'':'none';$('err').textContent=err.join('\n');
+ if(!tx){invalidate();return}
+ TX=tx;sel=null;cur=Math.min(cur,TX.tEnd);setExports(true);table();draw()}
+const fit=()=>{if(!TX)return;px=Math.max(.05,(wrap.clientWidth-L-30)/TX.tEnd);draw()},zoom=f=>{if(!TX)return;px=Math.min(200,Math.max(.05,px*f));draw()};
+function stopPlay(){clearInterval(timer);timer=null;$('pl').textContent='▶ Play'}
+function nextEdge(){const{pts}=TX;for(let i=1;i<pts.length;i++)if((pts[i].scl!==pts[i-1].scl||pts[i].sda!==pts[i-1].sda)&&pts[i].t>cur+1e-9)return pts[i].t;return null}
+function step(){const t=nextEdge();if(t===null){stopPlay();return false}cur=t;curReadout();const X=x(t);if(X>wrap.scrollLeft+wrap.clientWidth-20||X<wrap.scrollLeft)wrap.scrollLeft=X-80;return true}
+$('pl').onclick=()=>{if(timer){stopPlay();return}if(nextEdge()===null)cur=0;$('pl').textContent='⏸ Pause';timer=setInterval(step,400/+$('sp').value)};
+$('sp').onchange=()=>{if(timer){stopPlay();$('pl').click()}};$('nx').onclick=()=>{stopPlay();step()};
+$('rs').onclick=()=>{stopPlay();cur=0;wrap.scrollLeft=0;curReadout()};
+$('zi').onclick=()=>zoom(1.5);$('zo').onclick=()=>zoom(1/1.5);$('fit').onclick=fit;
+function moveTo(e){const r=wrap.getBoundingClientRect();cur=Math.min(TX.tEnd,Math.max(0,(e.clientX-r.left+wrap.scrollLeft-L)/px));curReadout()}
+wrap.addEventListener('pointerdown',e=>{if(!TX)return;stopPlay();drag=true;const i=e.target.dataset&&e.target.dataset.i;moveTo(e);if(i!==undefined){sel=TX.segs[i];draw()}});
+wrap.addEventListener('pointermove',e=>{if(drag&&TX)moveTo(e)});addEventListener('pointerup',()=>drag=false);
+$('tb').onclick=e=>{const tr=e.target.closest('tr[data-idx]');if(!tr)return;sel=TX.segs.find(s=>s.idx===+tr.dataset.idx&&s.k!=='ack');cur=sel.t0;draw()};
+$('cfg').addEventListener('input',recalc);
+$('pre').innerHTML=Object.keys(PR).map(k=>`<option>${k}</option>`).join('');$('pre').onchange=()=>{setCfg({...DEF,...PR[$('pre').value]});cur=0;recalc();fit()};
+$('th').onclick=()=>{const d=document.documentElement,dark=d.dataset.theme?d.dataset.theme==='dark':matchMedia('(prefers-color-scheme:dark)').matches;d.dataset.theme=dark?'light':'dark';if(TX)draw()};
+$('save').onclick=()=>{try{localStorage.setItem('i2c-cfg',JSON.stringify(getRaw()));$('save').textContent='Saved'}catch(e){$('save').textContent='Storage unavailable'}setTimeout(()=>$('save').textContent='Save config',1200)};
+const msg=(t,bad)=>{const e=$('msg');e.textContent=t;e.className=bad?'bad':'note';clearTimeout(msg.t);msg.t=setTimeout(()=>e.textContent='',5000)};
+const dl=(name,blob)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+$('csv').onclick=()=>{if(!TX)return;try{dl('i2c-transaction.csv',new Blob([toCsv(TX)],{type:'text/csv'}))}catch(e){msg('CSV export failed: '+e.message,1)}};
+$('png').onclick=()=>{if(!TX)return;const w=L+TX.tEnd*px+24,img=new Image(),fail=m=>msg('PNG export failed: '+m,1);
+ img.onload=()=>{try{const c=document.createElement('canvas');c.width=Math.ceil(w*2);c.height=464;const g=c.getContext('2d');if(!g)throw Error('canvas unavailable');g.scale(2,2);g.drawImage(img,0,0);
+  c.toBlob(b=>{if(!b)return fail('image too large or blob not created (try Fit).');try{dl('i2c-waveform.png',b)}catch(e){fail(e.message)}})}catch(e){fail(e.message)}};
+ img.onerror=()=>fail('could not render the waveform image.');img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svgMarkup())};
+$('cp').onclick=()=>{if(!TX)return;const c=TX.c,t=`I²C ${c.ten?'10':'7'}-bit, ${c.khz} kbit/s, addr ${hex(c.addr,c.ten?3:2)}, op ${c.op}\n`+TX.segs.map(g=>g.k==='ack'?(g.ack?'ACK':'NACK'):g.disp).join(' | ')+(TX.notes.length?'\n'+TX.notes.join('\n'):'')+'\n(simulated)';
+ if(!navigator.clipboard||!navigator.clipboard.writeText)return msg('Clipboard is not available in this browser or context.',1);
+ navigator.clipboard.writeText(t).then(()=>msg('Summary copied.')).catch(e=>msg('Copy failed: '+(e&&e.message||'permission denied'),1))};
+addEventListener('resize',()=>{if(TX)fit()});
+let saved=null;try{saved=JSON.parse(localStorage.getItem('i2c-cfg'))}catch(e){}
+setCfg(sanitizeCfg(saved));recalc();fit();
+</script></body></html>
